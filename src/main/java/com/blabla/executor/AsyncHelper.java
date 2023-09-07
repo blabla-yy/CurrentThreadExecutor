@@ -30,4 +30,12 @@ public class AsyncHelper {
     public static CompletableFuture<Void> awaitAll(List<CompletableFuture<?>> list) {
         return CompletableFuture.allOf(list.toArray(new CompletableFuture[0]));
     }
+
+    /**
+     * 是否完成，包括异常情况
+     * 注意，future异常时使用join会抛出错误。
+     */
+    public static boolean isCompleted(CompletableFuture<?> future) {
+        return future.isDone() || future.isCancelled() || future.isCompletedExceptionally();
+    }
 }

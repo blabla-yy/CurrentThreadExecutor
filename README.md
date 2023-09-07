@@ -1,90 +1,72 @@
-# CurrentThreadExecutor
-
-所有任务都在初始化CurrentThreadExecutor实例的线程中运行（即'当前线程'）。
-能够处理异步任务且没有线程池，工作线程可控。
-
-# 使用场景
-
-- 使用CompletableFuture等异步工具，希望任务全部执行在一个 __可控线程__ 。
-- 使用Tomcat、Jetty等web容器，每个请求线程分别处理大量异步IO任务，相互隔离线程资源，__消除线程池配置困扰以及多线程竞争问题__ 。
-
-# 特点
-
-- 支持超时设置
-- 支持中断执行器
-- CurrentThreadStackExecutor 支持await函数。
-
-# 使用
-
 ## CurrentThreadExecutor
 
+所有任务都在初始化CurrentThreadExecutor实例的线程中运行（即'当前线程'）。
+能够处理异步任务且没有线程池，不会在Executor中创建线程，工作线程可控。
+
+### 使用场景
+- 单线程处理大量异步IO任务，__消除线程池配置困扰以及多线程问题__ 。
+- 使用CompletableFuture等异步工具，希望任务全部执行在一个 __可控线程__ 。（目前JDK提供的Executor实现都是会创建线程的。）
+- 使用JDK19+ VirtualThread同样可以指定此Executor，而且可以避免多线程。
+
+### 特点
+
+- 统计累计所有任务耗时。可以用来评估CPU计算耗时和IO耗时的占比。
+- interrupt中断。
+- 超时终止执行。
+- 支持类似Node.js next-tick回调
+
+### 使用
+
+#### CurrentThreadExecutor
+
 ```java
 class Test {
-    public void test() {
-        final int requestSleepSecond = 0;
-        final int count = 10;
-        Thread currentThread = Thread.currentThread();
-        CurrentThreadExecutor currentThreadExecutor = new CurrentThreadExecutor();
+  private final ExecutorService threadPoolExecutor = Executors.newFixedThreadPool(10);
 
-        List<CompletableFuture<String>> requests = new ArrayList<>(count);
-        for (int i = 0; i < count; i++) {
-            // 指定Executor。所有的异步任务均会在当前线程中执行，没有多线程。
-            CompletableFuture<String> request = MockRequest.requestOnCurrentPool.apply(requestSleepSecond, currentThreadExecutor)
-                    .thenApply(response -> {
-                        Assert.assertEquals(currentThread, Thread.currentThread());
-                        return response;
-                    })
-                    .thenApply(response -> {
-                        Assert.assertEquals(currentThread, Thread.currentThread());
-                        return response;
-                    });
-            requests.add(request);
-        }
-        CompletableFuture<List<String>> future = AsyncHelper.aggregate(requests);
-        List<String> response = currentThreadExecutor.start(future);
-        Assert.assertNotNull(response);
-        Assert.assertEquals(response.size(), count);
+  private CompletableFuture<String> requestOnThreadPool() {
+    return CompletableFuture.supplyAsync(() -> "response", threadPoolExecutor);
+  }
+
+  @Test
+  public void test() {
+    final int count = 10;
+    Thread mainThread = Thread.currentThread();
+    CurrentThreadExecutor mainThreadExecutor = new CurrentThreadExecutor();
+
+    List<CompletableFuture<String>> requests = new ArrayList<>(count);
+    for (int i = 0; i < count; i++) {
+      CompletableFuture<String> request = this.requestOnThreadPool()
+              .thenApplyAsync(response -> {
+                Assert.assertEquals(mainThread, Thread.currentThread());
+                return response;
+              }, mainThreadExecutor); // back to main thread
+      requests.add(request);
     }
+    CompletableFuture<List<String>> targetFuture = AsyncHelper.aggregate(requests);
+    // Start executing all tasks until targetFuture is completed.
+    List<String> response = mainThreadExecutor.start(targetFuture);
+
+    Assert.assertNotNull(response);
+    Assert.assertEquals(response.size(), count);
+  }
 }
 
 ```
 
-- 使用CompletableFuture的async为后缀函数，可以指定executor，将其指定为CurrentThreadExecutor实例。
-    - 如果前置任务已经在当前线程了，后续直接不使用async函数切换线程。
-- 获取直接使用CurrentThreadExecutor.submit()函数提交任务。
-- 结束标志
-  - start需要传一个future参数，只要此future完成，Executor就会结束，退出函数。如果有多余的任务未执行则抛弃。
+---
 
-## CurrentThreadStackExecutor 支持await
+All tasks run in the thread that initialized the CurrentThreadExecutor instance (i.e. the 'current thread').
+Able to handle asynchronous tasks without a thread pool, no threads will be created in the Executor, and the worker threads are controllable.
 
-```java
-class Test {
-    private String handle(CurrentThreadStackExecutor stackExecutor) {
-        CompletableFuture<String> request = MockRequest.requestOnCurrentPool.apply(requestSleepSecond, stackExecutor);
-        try {
-            String await = stackExecutor.await(request); // 提交到stackExecutor的任务。可以await future
-            Assert.assertEquals(currentThread, Thread.currentThread());
-            Assert.assertNotNull(await);
-            return await;
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        }
-    }
+### Scenes to be used
 
-    public void testThreadSwitch() throws InterruptedException {
-        // 每个请求耗时1s
-        int requestSleepSecond = 1;
-        Thread currentThread = Thread.currentThread();
+- Single thread handles a large number of asynchronous IO tasks, __eliminating thread pool configuration troubles and multi-thread competition problems__
+- Using asynchronous tools such as CompletableFuture, it is hoped that all tasks will be executed in one __controllable thread__. (The current Executor implementation provided by JDK all creates threads.)
+- Using JDK19+ VirtualThread can also specify this Executor and avoid multi-thread problem.
 
-        CurrentThreadStackExecutor stackExecutor = new CurrentThreadStackExecutor();
+### Features
 
-        CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> handle(stackExecutor), stackExecutor);
-
-        String response = stackExecutor.start(future);
-        Assert.assertNotNull(response);
-        System.out.println(response);
-    }
-}
-```
-- 基于栈实现。所以时间/空间都不会是最优的
-- 可控的异步任务，使用await函数，可以简化代码，避免回调地狱。
+- Count the time spent on all tasks. It can be used to evaluate the proportion of CPU calculation time and IO time consumption.
+- interrupt.
+- Timeout terminates execution.
+- Support similar to Node.js next-tick callback

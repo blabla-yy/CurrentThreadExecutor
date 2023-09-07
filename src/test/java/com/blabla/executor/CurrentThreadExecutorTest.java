@@ -6,6 +6,8 @@ import org.junit.Test;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 
 public class CurrentThreadExecutorTest {
@@ -85,6 +87,34 @@ public class CurrentThreadExecutorTest {
         }
         CompletableFuture<List<String>> future = AsyncHelper.aggregate(requests);
         List<String> response = currentThreadExecutor.start(future);
+        Assert.assertNotNull(response);
+        Assert.assertEquals(response.size(), count);
+    }
+
+    private final ExecutorService threadPoolExecutor = Executors.newFixedThreadPool(10);
+    private CompletableFuture<String> requestOnThreadPool() {
+        return CompletableFuture.supplyAsync(() -> "response", threadPoolExecutor);
+    }
+
+    @Test
+    public void test() throws InterruptedException {
+        final int count = 10;
+        Thread mainThread = Thread.currentThread();
+        CurrentThreadExecutor currentThreadExecutor = new CurrentThreadExecutor();
+
+        List<CompletableFuture<String>> requests = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            CompletableFuture<String> request = this.requestOnThreadPool()
+                    .thenApplyAsync(response -> {
+                        Assert.assertEquals(mainThread, Thread.currentThread());
+                        return response;
+                    }, currentThreadExecutor); // back to main thread
+            requests.add(request);
+        }
+        CompletableFuture<List<String>> targetFuture = AsyncHelper.aggregate(requests);
+        // Start executing all tasks until targetFuture is completed
+        List<String> response = currentThreadExecutor.start(targetFuture);
+
         Assert.assertNotNull(response);
         Assert.assertEquals(response.size(), count);
     }

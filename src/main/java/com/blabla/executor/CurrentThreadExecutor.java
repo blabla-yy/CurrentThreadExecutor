@@ -1,6 +1,7 @@
 package com.blabla.executor;
 
 import com.blabla.executor.exception.NotWorkerThreadException;
+import com.blabla.executor.exception.UnexpectedStatusException;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.concurrent.CompletableFuture;
@@ -11,53 +12,49 @@ import java.util.function.Supplier;
 
 @Slf4j
 public class CurrentThreadExecutor implements Executor {
-    public enum Status {
-        READY, // 就绪
-        RUNNING, // 运行中
-        COMPLETED, // 正常结束
-        TIMEOUT, // 超时
-        TERMINATED; // 被终止，shutDown
-
-        /**
-         * @return 是否已经完成
-         */
-        public boolean hasClosed() {
-            return this == COMPLETED || this == TERMINATED || this == TIMEOUT;
-        }
-    }
-
-    /**
-     * 任务队列
-     */
     protected final LinkedBlockingQueue<Runnable> tasks;
     /**
-     * 轮询超时时间，毫秒
-     * 小于 0 则会一直阻塞直到有新的任务
-     */
-    protected final long pollTimeout;
-    /**
-     * 工作线程，即创建对象时的线程
+     * ensure all task will run on this thread
      */
     private final Thread workerThread;
-    // 超时时间毫秒
+
+    /**
+     * nullable
+     * similar to next-tick in node.js
+     * it will be executed every time the queue is empty
+     */
+    private final Runnable nextTick;
     private long timeout;
-    // start时间，毫秒
+    /**
+     * milliseconds
+     */
     private long startTime;
     protected volatile Status status;
-    protected CompletableFuture<?> finalResult;
+    /**
+     * CurrentThreadExecutor will exit the start function after this Future is completed
+     */
+    protected CompletableFuture<?> targetFuture;
+    private long totalTaskTime;
+    private final boolean recordTaskTime;
 
-    public CurrentThreadExecutor(int pollTimeout, TimeUnit timeUnit) {
-        this.pollTimeout = timeUnit.toMillis(pollTimeout);
-        this.tasks = new LinkedBlockingQueue<>();
-        this.workerThread = Thread.currentThread();
-        this.status = Status.READY;
+    public CurrentThreadExecutor(Runnable nextTick) {
+        this(nextTick, false);
     }
 
     public CurrentThreadExecutor() {
-        this.pollTimeout = TimeUnit.SECONDS.toMillis(1);
+        this(null, false);
+    }
+
+    /**
+     * @param nextTick       nullable. it will be executed every time the queue is empty
+     * @param recordTaskTime Whether to accumulate task execution time
+     */
+    public CurrentThreadExecutor(Runnable nextTick, boolean recordTaskTime) {
         this.tasks = new LinkedBlockingQueue<>();
         this.workerThread = Thread.currentThread();
         this.status = Status.READY;
+        this.nextTick = nextTick;
+        this.recordTaskTime = recordTaskTime;
     }
 
     /**
@@ -87,90 +84,105 @@ public class CurrentThreadExecutor implements Executor {
         return status;
     }
 
-    public <T> T start(Supplier<CompletableFuture<T>> finalResult, long timeout, TimeUnit timeUnit) throws InterruptedException {
-        /*
-          先执行start函数，然后再执行任务。
-          使用CompletableFuture而不是直接this.execute，是为了能够方便得到future，本质一样的。
-         */
+    /**
+     * @return Cumulative execution time of all tasks, if recordTaskTime is true
+     */
+    public long getTotalTaskTime() {
+        return totalTaskTime;
+    }
+
+    public <T> T start(Supplier<CompletableFuture<T>> targetFuture, long timeout, TimeUnit timeUnit) throws InterruptedException {
         CompletableFuture<T> future = CompletableFuture.runAsync(() -> {
                 }, this)
-                .thenCompose(ignored -> finalResult.get());
+                .thenCompose(ignored -> targetFuture.get());
         return this.start(future, timeout, timeUnit);
     }
 
     /**
-     * 执行任务，直到finalResult完成。
-     * 1. 如果任务与finalResult无关，则可能会不执行。
-     * 2. 结束时不会清空剩余的无关任务。可以手动清理/等待GC
-     * 3. start时，会执行在次函数之前提交的任务。（不会清理tasks）
-     * 4. 结果使用join函数，可能会抛出CompletableFuture异常（如：取消等），但此处不捕获，继续向上抛出。
+     * Execute the task until targetFuture is completed.
+     * If there are remaining tasks when targetFuture is completed, Executor will not execute them, but they can be obtained through getTasks
+     * Will be affected by interruptedException
      *
-     * @param finalResult 退出执行的条件：此future已经完成
-     * @param timeout     超时时间。<= 0时，为没有超时限制。注意此超时非准确超时时间，且不会中断正在执行的函数。
-     * @param timeUnit    超时时间单位
-     * @param <T>         future泛型
-     * @return finalResult的结果，如果没有完成（执行器超时/中断）返回null。
+     * @param targetFuture Executor exit conditions
+     * @param timeout      timeout
+     * @param timeUnit     timeout unit
+     * @param <T>          future type
+     *
+     * @return targetFuture.join()
      */
-    public <T> T start(CompletableFuture<T> finalResult, long timeout, TimeUnit timeUnit) throws InterruptedException {
+    public <T> T start(CompletableFuture<T> targetFuture, long timeout, TimeUnit timeUnit) throws InterruptedException {
         if (timeout > 0) {
             timeout = timeUnit.toMillis(timeout);
         }
-
+        if (this.status == Status.RUNNING) {
+            throw new UnexpectedStatusException("Executor is still running");
+        }
         if (!isWorkerThread()) {
             throw new NotWorkerThreadException();
         }
         this.status = Status.RUNNING;
-        this.finalResult = finalResult;
+        this.targetFuture = targetFuture;
         this.timeout = timeout;
         this.startTime = System.currentTimeMillis();
 
         while (!this.checkStatus()) {
             process();
         }
-        if (futureHasDone(finalResult)) {
-            return finalResult.join();
+        if (AsyncHelper.isCompleted(targetFuture)) {
+            return targetFuture.join();
         }
         log.warn("future not finished");
         return null;
     }
 
-    public int getWaitingJobSize() {
-        return tasks.size();
-    }
-
-    public void clearTasks() {
-        this.tasks.clear();
-    }
-
     /**
-     * 开始循环处理事件
-     * 退出时，即最终事件处理完毕。但提交的其他事件会被丢弃
+     * If the start function exits due to an exception such as interrupted,
+     * you can use this function to continue running.
      */
-    public <T> T start(CompletableFuture<T> finalResult) throws InterruptedException {
-        return this.start(finalResult, -1, TimeUnit.MILLISECONDS);
+    public Object goOn() throws InterruptedException {
+        if (this.status != Status.RUNNING) {
+            throw new UnexpectedStatusException("Executor is should be running");
+        }
+        if (!isWorkerThread()) {
+            throw new NotWorkerThreadException();
+        }
+        while (!this.checkStatus()) {
+            process();
+        }
+        if (AsyncHelper.isCompleted(targetFuture)) {
+            return targetFuture.join();
+        }
+        log.warn("future not finished");
+        return null;
+    }
+
+    public <T> T start(CompletableFuture<T> targetFuture) throws InterruptedException {
+        return this.start(targetFuture, -1, TimeUnit.MILLISECONDS);
+    }
+
+    public LinkedBlockingQueue<Runnable> getTasks() {
+        return this.tasks;
     }
 
     /**
-     * 终止事件处理，后续任务将不再执行*
-     * 但finalResult也可能永远不会执行完成，需要自行判断。
+     * Terminate processing, subsequent tasks will no longer be executed*
+     * Tasks currently executing will still run
      *
-     * @return 剩余的任务数量（有并发带来的数量问题）*
+     * @return The current number of remaining tasks*
      */
-    public int shutDown() {
+    public int terminate() {
         this.status = Status.TERMINATED;
         return tasks.size();
     }
 
     /**
-     * 最终的Future已经完成，或者提前终止，超时*
-     *
-     * @return 是否结束处理
+     * @return is finished or timeout
      */
     protected boolean checkStatus() {
         if (this.status.hasClosed()) {
             return true;
         }
-        if (finalResult == null || futureHasDone(finalResult)) {
+        if (targetFuture == null || AsyncHelper.isCompleted(targetFuture)) {
             this.status = Status.COMPLETED;
         } else if (this.timeout > 0 && this.startTime > 0
                 && (System.currentTimeMillis() - this.startTime > timeout)) {
@@ -179,22 +191,42 @@ public class CurrentThreadExecutor implements Executor {
         return this.status.hasClosed();
     }
 
-    public static boolean futureHasDone(CompletableFuture<?> future) {
-        return future.isDone() || future.isCancelled() || future.isCompletedExceptionally();
+    private void runTask(Runnable task) {
+        if (task == null) {
+            throw new NullPointerException();
+        }
+        if (this.recordTaskTime) {
+            long startTime = System.currentTimeMillis();
+            task.run();
+            this.totalTaskTime += System.currentTimeMillis() - startTime;
+        } else {
+            task.run();
+        }
     }
 
     protected void process() throws InterruptedException {
-        // 不配置超时会空转一段时间。
-        // 也可以尝试使用take函数，永久阻塞等待事件到来，或是interrupt事件。
-        Runnable task;
-        if (pollTimeout < 0) {
-            task = tasks.take();
-        } else {
-            task = tasks.poll(pollTimeout, TimeUnit.MILLISECONDS);
+        long pollTimeout = 0;
+        if (timeout > 0) {
+            long elapse = System.currentTimeMillis() - this.startTime;
+            if (elapse > timeout) {
+                return;
+            }
+            pollTimeout = timeout - elapse;
         }
 
+        // 如果任务队列目前仍是空，优先执行nextTick
+        if (tasks.isEmpty() && nextTick != null) {
+            this.runTask(this.nextTick);
+        }
+
+        Runnable task;
+        if (pollTimeout > 0) {
+            task = tasks.poll(pollTimeout, TimeUnit.MILLISECONDS);
+        } else {
+            task = tasks.take();
+        }
         if (task != null) {
-            task.run();
+            this.runTask(task);
         }
     }
 }
