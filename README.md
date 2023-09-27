@@ -6,12 +6,12 @@
 ### 使用场景
 - 单线程处理大量异步IO任务，__消除线程池配置困扰以及多线程问题__ 。
 - 使用CompletableFuture等异步工具，希望任务全部执行在一个 __可控线程__ 。（目前JDK提供的Executor实现都是会创建线程的。）
-- 使用JDK19+ VirtualThread同样可以指定此Executor，而且可以避免多线程。
+- 使用JDK19+ VirtualThread同样可以指定此Executor，避免使用额外的线程资源。
 
 ### 特点
 
 - 统计累计所有任务耗时。可以用来评估CPU计算耗时和IO耗时的占比。
-- interrupt中断。
+- 支持interrupt中断。
 - 超时终止执行。
 - 支持类似Node.js next-tick回调
 

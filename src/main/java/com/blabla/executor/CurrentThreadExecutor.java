@@ -115,7 +115,7 @@ public class CurrentThreadExecutor implements Executor {
             timeout = timeUnit.toMillis(timeout);
         }
         if (this.status == Status.RUNNING) {
-            throw new UnexpectedStatusException("Executor is still running");
+            throw new UnexpectedStatusException("Executor is running");
         }
         if (!isWorkerThread()) {
             throw new NotWorkerThreadException();
@@ -135,25 +135,11 @@ public class CurrentThreadExecutor implements Executor {
         return null;
     }
 
-    /**
-     * If the start function exits due to an exception such as interrupted,
-     * you can use this function to continue running.
-     */
-    public Object goOn() throws InterruptedException {
-        if (this.status != Status.RUNNING) {
-            throw new UnexpectedStatusException("Executor is should be running");
+    public synchronized void reset(boolean clearTasks) {
+        this.status = Status.READY;
+        if (clearTasks) {
+            this.tasks.clear();
         }
-        if (!isWorkerThread()) {
-            throw new NotWorkerThreadException();
-        }
-        while (!this.checkStatus()) {
-            process();
-        }
-        if (AsyncHelper.isCompleted(targetFuture)) {
-            return targetFuture.join();
-        }
-        log.warn("future not finished");
-        return null;
     }
 
     public <T> T start(CompletableFuture<T> targetFuture) throws InterruptedException {
@@ -162,17 +148,6 @@ public class CurrentThreadExecutor implements Executor {
 
     public LinkedBlockingQueue<Runnable> getTasks() {
         return this.tasks;
-    }
-
-    /**
-     * Terminate processing, subsequent tasks will no longer be executed*
-     * Tasks currently executing will still run
-     *
-     * @return The current number of remaining tasks*
-     */
-    public int terminate() {
-        this.status = Status.TERMINATED;
-        return tasks.size();
     }
 
     /**
@@ -205,28 +180,32 @@ public class CurrentThreadExecutor implements Executor {
     }
 
     protected void process() throws InterruptedException {
-        long pollTimeout = 0;
-        if (timeout > 0) {
-            long elapse = System.currentTimeMillis() - this.startTime;
-            if (elapse > timeout) {
-                return;
+        try {
+            long pollTimeout = 0;
+            if (timeout > 0) {
+                long elapse = System.currentTimeMillis() - this.startTime;
+                if (elapse > timeout) {
+                    return;
+                }
+                pollTimeout = timeout - elapse;
             }
-            pollTimeout = timeout - elapse;
-        }
 
-        // 如果任务队列目前仍是空，优先执行nextTick
-        if (tasks.isEmpty() && nextTick != null) {
-            this.runTask(this.nextTick);
-        }
+            if (tasks.isEmpty() && nextTick != null) {
+                this.runTask(this.nextTick);
+            }
 
-        Runnable task;
-        if (pollTimeout > 0) {
-            task = tasks.poll(pollTimeout, TimeUnit.MILLISECONDS);
-        } else {
-            task = tasks.take();
-        }
-        if (task != null) {
-            this.runTask(task);
+            Runnable task;
+            if (pollTimeout > 0) {
+                task = tasks.poll(pollTimeout, TimeUnit.MILLISECONDS);
+            } else {
+                task = tasks.take();
+            }
+            if (task != null) {
+                this.runTask(task);
+            }
+        } catch (InterruptedException e) {
+            this.status = Status.INTERRUPTED;
+            throw e;
         }
     }
 }

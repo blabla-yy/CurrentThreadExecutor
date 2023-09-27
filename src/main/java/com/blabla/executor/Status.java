@@ -5,13 +5,13 @@ public enum Status {
     RUNNING, // 运行中
     COMPLETED, // 正常结束
     TIMEOUT, // 超时
-    TERMINATED; // 被终止，shutDown
+    INTERRUPTED; // 被终止，shutDown
 
     /**
      * @return 是否已经完成
      */
     public boolean hasClosed() {
-        return this == COMPLETED || this == TERMINATED || this == TIMEOUT;
+        return this == COMPLETED || this == INTERRUPTED || this == TIMEOUT;
     }
 
 }

@@ -92,6 +92,7 @@ public class CurrentThreadExecutorTest {
     }
 
     private final ExecutorService threadPoolExecutor = Executors.newFixedThreadPool(10);
+
     private CompletableFuture<String> requestOnThreadPool() {
         return CompletableFuture.supplyAsync(() -> "response", threadPoolExecutor);
     }
@@ -117,5 +118,46 @@ public class CurrentThreadExecutorTest {
 
         Assert.assertNotNull(response);
         Assert.assertEquals(response.size(), count);
+    }
+
+    @Test
+    public void testInterrupt() throws InterruptedException {
+        // 每个请求耗时1s
+        CompletableFuture<?> future = new CompletableFuture<>();
+        CurrentThreadExecutor currentThreadExecutor = new CurrentThreadExecutor();
+        currentThreadExecutor.execute(() -> {
+            Thread.currentThread().interrupt();
+        });
+        currentThreadExecutor.execute(() -> {
+            future.complete(null);
+        });
+
+        try {
+            currentThreadExecutor.start(future);
+        } catch (Exception e) {
+            Assert.assertEquals(currentThreadExecutor.getStatus(), Status.INTERRUPTED);
+        }
+    }
+
+    @Test
+    public void testReset() throws InterruptedException {
+        // 每个请求耗时1s
+        CompletableFuture<?> future = new CompletableFuture<>();
+        CurrentThreadExecutor currentThreadExecutor = new CurrentThreadExecutor();
+        currentThreadExecutor.execute(() -> {
+            Thread.currentThread().interrupt();
+        });
+        currentThreadExecutor.execute(() -> {
+            future.complete(null);
+        });
+
+        try {
+            currentThreadExecutor.start(future);
+        } catch (Exception e) {
+            Assert.assertEquals(currentThreadExecutor.getStatus(), Status.INTERRUPTED);
+            currentThreadExecutor.reset(false);
+            Object result = currentThreadExecutor.start(future);
+            Assert.assertNull(result);
+        }
     }
 }
