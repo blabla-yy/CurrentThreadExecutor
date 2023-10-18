@@ -1,4 +1,4 @@
-package com.blabla.executor;
+package io.github.blablayy.executor;
 
 public enum Status {
     READY, // 就绪

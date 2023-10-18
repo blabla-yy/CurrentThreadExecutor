@@ -1,4 +1,4 @@
-package com.blabla.executor;
+package io.github.blablayy.executor;
 
 import org.junit.Assert;
 import org.junit.Test;

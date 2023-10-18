@@ -1,6 +1,6 @@
-package com.blabla.executor.exception;
+package io.github.blablayy.executor.exception;
 
-import com.blabla.executor.CurrentThreadExecutor;
+import io.github.blablayy.executor.CurrentThreadExecutor;
 
 /**
  * @see CurrentThreadExecutor

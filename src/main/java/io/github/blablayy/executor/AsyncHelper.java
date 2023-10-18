@@ -1,4 +1,4 @@
-package com.blabla.executor;
+package io.github.blablayy.executor;
 
 import java.util.ArrayList;
 import java.util.List;
