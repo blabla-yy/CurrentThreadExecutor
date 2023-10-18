@@ -1,7 +1,7 @@
-package io.github.blablayy.executor;
+package io.github.blabla.executor;
 
-import io.github.blablayy.executor.exception.NotWorkerThreadException;
-import io.github.blablayy.executor.exception.UnexpectedStatusException;
+import io.github.blabla.executor.exception.NotWorkerThreadException;
+import io.github.blabla.executor.exception.UnexpectedStatusException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

@@ -1,4 +1,4 @@
-package io.github.blablayy.executor;
+package io.github.blabla.executor;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
