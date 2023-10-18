@@ -2,7 +2,8 @@ package com.blabla.executor;
 
 import com.blabla.executor.exception.NotWorkerThreadException;
 import com.blabla.executor.exception.UnexpectedStatusException;
-import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
@@ -10,8 +11,8 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
-@Slf4j
 public class CurrentThreadExecutor implements Executor {
+    private static final Logger log = LoggerFactory.getLogger(CurrentThreadExecutor.class);
     protected final LinkedBlockingQueue<Runnable> tasks;
     /**
      * ensure all task will run on this thread

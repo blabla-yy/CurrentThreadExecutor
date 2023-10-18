@@ -10,45 +10,80 @@
 
 ### 特点
 
+- 无创建线程，当前线程处理所有异步任务。
 - 统计累计所有任务耗时。可以用来评估CPU计算耗时和IO耗时的占比。
 - 支持interrupt中断。
 - 超时终止执行。
-- 支持类似Node.js next-tick回调
+- 支持类似Node.js next-tick回调。
+- JDK8+
 
 ### 使用
 
 #### CurrentThreadExecutor
+只使用主线程发起、处理并等待100个异步请求结束
 
+Only use the main thread to initiate, process and wait for the end of 100 asynchronous requests
 ```java
+import java.util.concurrent.CompletableFuture;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+
 class Test {
-  private final ExecutorService threadPoolExecutor = Executors.newFixedThreadPool(10);
+    public void httpRequest() {
+        var currentThreadExecutor = new CurrentThreadExecutor();
 
-  private CompletableFuture<String> requestOnThreadPool() {
-    return CompletableFuture.supplyAsync(() -> "response", threadPoolExecutor);
-  }
+        // HttpClient JDK11+
+        var client = HttpClient.newBuilder()
+                .executor(currentThreadExecutor) //selector executor default is: Executors.newCachedThreadPool(new DefaultThreadFactory(id));
+                .build();
+        var futures = new ArrayList<CompletableFuture<HttpResponse<String>>>();
 
-  @Test
-  public void test() {
-    final int count = 10;
-    Thread mainThread = Thread.currentThread();
-    CurrentThreadExecutor mainThreadExecutor = new CurrentThreadExecutor();
-
-    List<CompletableFuture<String>> requests = new ArrayList<>(count);
-    for (int i = 0; i < count; i++) {
-      CompletableFuture<String> request = this.requestOnThreadPool()
-              .thenApplyAsync(response -> {
-                Assert.assertEquals(mainThread, Thread.currentThread());
-                return response;
-              }, mainThreadExecutor); // back to main thread
-      requests.add(request);
+        for (int i = 0; i < 100; i++) {
+            final int index = i;
+            var request = HttpRequest.newBuilder()
+                    .uri(URI.create("http://0.0.0.0"))
+                    .build();
+            var future = client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                    .whenCompleteAsync((response, exception) -> {
+                        // main thread
+                        System.out.println("Request: " + index + " completed on " + Thread.currentThread().getName());
+                    }, currentThreadExecutor); // default is ForkJoinPool
+            futures.add(future);
+        }
+        var allRequestsFuture = CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
+        currentThreadExecutor.start(allRequestsFuture); // Start processing all tasks until the Future is completed.
+        System.out.println("All tasks have been completed");
     }
-    CompletableFuture<List<String>> targetFuture = AsyncHelper.aggregate(requests);
-    // Start executing all tasks until targetFuture is completed.
-    List<String> response = mainThreadExecutor.start(targetFuture);
+}
+```
 
-    Assert.assertNotNull(response);
-    Assert.assertEquals(response.size(), count);
-  }
+Used with CompletableFuture
+```java
+import java.util.concurrent.CompletableFuture;
+
+class Test {
+    // The main thread executes all CompletableFuture tasks, avoiding the use of ForkJoinPool
+    public void usingCompletableFuture() {
+        final int count = 10;
+        Thread mainThread = Thread.currentThread();
+        CurrentThreadExecutor mainThreadExecutor = new CurrentThreadExecutor();
+        List<CompletableFuture<String>> requests = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            CompletableFuture<String> request = CompletableFuture.runAsync(() -> "Hello", mainThreadExecutor) // Go back to the main thread and avoid using ForkJoinPool
+                    .thenApplyAsync(response -> {
+                        Assert.assertEquals(mainThread, Thread.currentThread());
+                        return response;
+                    }, mainThreadExecutor); // default is ForkJoinPool
+            requests.add(request);
+        }
+        CompletableFuture<List<String>> targetFuture = AsyncHelper.aggregate(requests);
+        // Start executing all tasks until targetFuture is completed.
+        List<String> response = mainThreadExecutor.start(targetFuture);
+
+        Assert.assertNotNull(response);
+        Assert.assertEquals(response.size(), count);
+    }
 }
 
 ```
@@ -66,7 +101,9 @@ Able to handle asynchronous tasks without a thread pool, no threads will be crea
 
 ### Features
 
+- No thread is created, the current thread handles all asynchronous tasks
 - Count the time spent on all tasks. It can be used to evaluate the proportion of CPU calculation time and IO time consumption.
 - interrupt.
 - Timeout terminates execution.
 - Support similar to Node.js next-tick callback
+- JDK8+
