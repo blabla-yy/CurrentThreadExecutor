@@ -1,11 +1,14 @@
 ## CurrentThreadExecutor
 
-所有任务都在初始化CurrentThreadExecutor实例的线程中运行（即'当前线程'）。
-能够处理异步任务且没有线程池，不会在Executor中创建线程，工作线程可控。
+CurrentThreadExecutor是基于Executor接口的实现类。主要用途是避免创建线程，使用已有的单(当前)线程所有执行所有异步任务。
+JDK大多API默认使用ForkJoinPool来执行异步任务。而Executors提供的实现都是基于创建线程实现的。在一些场景如需要处理大量IO任务但不想使用多线程，CurrentThreadExecutor是一个更好的选择。
+
+可以用在所有兼容Executor接口的类中，如：CompletableFuture、HttpClient，也可以使多个VirtualThread在一个线程上执行。
+
 
 ### 使用场景
 - 基于已有的线程（单线程）处理大量异步IO任务，消除线程池配置困扰以及多线程问题，节省资源。
-- 使用CompletableFuture等异步工具，希望任务全部执行在一个已有的线程上 。（目前JDK提供的Executor都是创建线程（池）实现异步处理的。）
+- 使用CompletableFuture等异步工具，希望任务全部执行在一个已有的线程上 。
 - 使用JDK19+ VirtualThread同样可以指定此Executor，避免使用额外的线程资源。
 
 ### 特点
@@ -90,13 +93,16 @@ class Test {
 
 ---
 
-All tasks run in the thread that initialized the CurrentThreadExecutor instance (i.e. the 'current thread').
-Able to handle asynchronous tasks without a thread pool, no threads will be created in the Executor, and the worker threads are controllable.
+CurrentThreadExecutor is an implementation class based on the Executor interface. The main purpose is to avoid creating threads and use an existing (current) thread to perform all asynchronous tasks.
+Most JDK APIs use ForkJoinPool by default to perform asynchronous tasks. The implementations provided by Executors are all based on creating threads.In some scenarios where you need to handle a large number of IO tasks but do not want to use multi-threading, CurrentThreadExecutor is a better choice.
+
+It can be used in all classes that are compatible with the Executor interface, such as CompletableFuture and HttpClient. It can also make multiple VirtualThreads execute on one thread.
+
 
 ### Scenes to be used
 
-- Single thread handles a large number of asynchronous IO tasks, __eliminating thread pool configuration troubles and multi-thread competition problems__
-- Using asynchronous tools such as CompletableFuture, it is hoped that all tasks will be executed in one __controllable thread__. (The current Executor implementation provided by JDK all creates threads.)
+- Single thread handles a large number of asynchronous IO tasks, eliminating thread pool configuration troubles and multi-thread competition problems.
+- Using asynchronous tools such as CompletableFuture, it is hoped that all tasks will be executed in current thread.
 - Using JDK19+ VirtualThread can also specify this Executor and avoid multi-thread problem.
 
 ### Features
