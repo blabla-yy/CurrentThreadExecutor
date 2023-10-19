@@ -19,16 +19,16 @@ jobs:
           server-username: MAVEN_USERNAME
           server-password: MAVEN_PASSWORD
       - name: Publish to the Maven Central Repository
-#        run: mvn --batch-mode deploy
-        run: samuelmeuli/action-maven-publish@v1
+        run: mvn --batch-mode deploy
+#        run: samuelmeuli/action-maven-publish@v1
         env:
           MAVEN_USERNAME: ${{ secrets.OSSRH_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.OSSRH_TOKEN }}
 
           gpg_private_key: ${{ secrets.GPG_SECRET }}
           gpg_passphrase: ${{ secrets.GPG_PASSWORD }}
-          nexus_username: ${{ secrets.OSSRH_USERNAME }}
-          nexus_password: ${{ secrets.OSSRH_TOKEN }}
+#          nexus_username: ${{ secrets.OSSRH_USERNAME }}
+#          nexus_password: ${{ secrets.OSSRH_TOKEN }}
       - name: Set up Java for publishing to GitHub Packages
         uses: actions/setup-java@v3
         with:
