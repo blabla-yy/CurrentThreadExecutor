@@ -4,9 +4,18 @@
 
     <groupId>io.github.blabla-yy</groupId>
     <artifactId>current-thread-executor</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
+    <description>
+        A tool library that implements the JDK Exeuctor interface to help users avoid creating threads to process all asynchronous tasks
+    </description>
+    <version>1.0.0</version>
     <name>current-thread-executor</name>
     <url>https://github.com/blabla-yy/CurrentThreadExecutor</url>
+
+    <scm>
+        <connection>scm:git:https://github.com/blabla-yy/CurrentThreadExecutor</connection>
+        <url>https://github.com/blabla-yy/CurrentThreadExecutor.git</url>
+        <developerConnection>scm:git:https://github.com/blabla-yy/CurrentThreadExecutor</developerConnection>
+    </scm>
 
     <properties>
         <maven.compiler.source>1.8</maven.compiler.source>
@@ -32,6 +41,7 @@
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
             <version>2.0.1</version>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>junit</groupId>
@@ -130,7 +140,7 @@
             <plugin>
                 <groupId>org.sonatype.plugins</groupId>
                 <artifactId>nexus-staging-maven-plugin</artifactId>
-                <version>1.6.8</version>
+                <version>1.6.13</version>
                 <extensions>true</extensions>
                 <configuration>
                     <serverId>ossrh</serverId>

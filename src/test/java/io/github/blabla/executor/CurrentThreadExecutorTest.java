@@ -32,7 +32,6 @@ public class CurrentThreadExecutorTest {
 
         String response = currentThreadExecutor.start(requestA);
         Assert.assertNotNull(response);
-        System.out.println(response);
     }
 
     @Test

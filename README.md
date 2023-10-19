@@ -20,11 +20,33 @@ JDK大多API默认使用ForkJoinPool来执行异步任务。而Executors提供�
 - 支持类似Node.js next-tick回调。
 - JDK8+
 
+### 添加Maven依赖
+```xml
+<dependency>
+    <groupId>io.github.blabla-yy</groupId>
+    <artifactId>current-thread-executor</artifactId>
+    <version>1.0.0</version>
+</dependency>
+```
+
 ### 使用
+简单使用  
+Used with CompletableFuture
+```java
+import java.util.concurrent.CompletableFuture;
 
-#### CurrentThreadExecutor
-只使用主线程发起、处理并等待100个异步请求结束
+class Test {
+    // The main thread executes CompletableFuture tasks, avoiding the use of ForkJoinPool
+    public void usingCompletableFuture() {
+        CurrentThreadExecutor executor = new CurrentThreadExecutor();
+        CompletableFuture<String> voidCompletableFuture = CompletableFuture.supplyAsync(() -> "Hello " + Thread.currentThread().getName(), executor);
+        String hello = executor.start(voidCompletableFuture);
+        System.out.println(hello); // Hello main
+    }
+}
+```
 
+只使用主线程发起、处理并等待100个异步请求结束  
 Only use the main thread to initiate, process and wait for the end of 100 asynchronous requests
 ```java
 import java.util.concurrent.CompletableFuture;
@@ -59,36 +81,6 @@ class Test {
         System.out.println("All tasks have been completed");
     }
 }
-```
-
-Used with CompletableFuture
-```java
-import java.util.concurrent.CompletableFuture;
-
-class Test {
-    // The main thread executes all CompletableFuture tasks, avoiding the use of ForkJoinPool
-    public void usingCompletableFuture() {
-        final int count = 10;
-        Thread mainThread = Thread.currentThread();
-        CurrentThreadExecutor mainThreadExecutor = new CurrentThreadExecutor();
-        List<CompletableFuture<String>> requests = new ArrayList<>(count);
-        for (int i = 0; i < count; i++) {
-            CompletableFuture<String> request = CompletableFuture.runAsync(() -> "Hello", mainThreadExecutor) // Go back to the main thread and avoid using ForkJoinPool
-                    .thenApplyAsync(response -> {
-                        Assert.assertEquals(mainThread, Thread.currentThread());
-                        return response;
-                    }, mainThreadExecutor); // default is ForkJoinPool
-            requests.add(request);
-        }
-        CompletableFuture<List<String>> targetFuture = AsyncHelper.aggregate(requests);
-        // Start executing all tasks until targetFuture is completed.
-        List<String> response = mainThreadExecutor.start(targetFuture);
-
-        Assert.assertNotNull(response);
-        Assert.assertEquals(response.size(), count);
-    }
-}
-
 ```
 
 ---

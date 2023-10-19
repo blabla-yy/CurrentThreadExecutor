@@ -2,8 +2,6 @@ package io.github.blabla.executor;
 
 import io.github.blabla.executor.exception.NotWorkerThreadException;
 import io.github.blabla.executor.exception.UnexpectedStatusException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
@@ -12,7 +10,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
 public class CurrentThreadExecutor implements Executor {
-    private static final Logger log = LoggerFactory.getLogger(CurrentThreadExecutor.class);
     protected final LinkedBlockingQueue<Runnable> tasks;
     /**
      * ensure all task will run on this thread
@@ -69,7 +66,7 @@ public class CurrentThreadExecutor implements Executor {
             throw new NullPointerException();
         }
         if (this.status.hasClosed()) {
-            log.warn("CurrentThreadExecutor is closed");
+            throw new UnexpectedStatusException("Executor has been closed");
         }
         tasks.add(command);
     }
@@ -132,7 +129,7 @@ public class CurrentThreadExecutor implements Executor {
         if (AsyncHelper.isCompleted(targetFuture)) {
             return targetFuture.join();
         }
-        log.warn("future not finished");
+        // Not Complete
         return null;
     }
 
