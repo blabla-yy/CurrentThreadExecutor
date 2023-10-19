@@ -39,7 +39,10 @@ class Test {
     // The main thread executes CompletableFuture tasks, avoiding the use of ForkJoinPool
     public void usingCompletableFuture() {
         CurrentThreadExecutor executor = new CurrentThreadExecutor();
-        CompletableFuture<String> voidCompletableFuture = CompletableFuture.supplyAsync(() -> "Hello " + Thread.currentThread().getName(), executor);
+        CompletableFuture<String> voidCompletableFuture = CompletableFuture.supplyAsync(() -> {
+            // main thread
+            return "Hello " + Thread.currentThread().getName();
+        }, executor);
         String hello = executor.start(voidCompletableFuture);
         System.out.println(hello); // Hello main
     }
